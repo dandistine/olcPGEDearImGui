@@ -138,7 +138,7 @@ public:
 		//One time initialization of the Dear ImGui library
 		ImGui::CreateContext();
 		//Create an instance of the Dear ImGui PGE Integration
-		pge_imgui = olc::PGE_ImGUI();
+		pge_imgui = olc::imgui::PGE_ImGUI();
 		
 		//The vi2d for pixel size must match the values given in Construct()
 		//Otherwise the mouse will not work correctly
