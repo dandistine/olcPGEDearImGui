@@ -2,7 +2,7 @@
 	imgui_impl_pge.h
 	+-------------------------------------------------------------+
 	|         OneLoneCoder Pixel Game Engine Extension            |
-	|               Dear ImGui Integration - v1.0                 |
+	|               Dear ImGui Integration - v2.0                 |
 	+-------------------------------------------------------------+
 	What is this?
 	~~~~~~~~~~~~~
@@ -41,16 +41,35 @@
 	OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+
+/*
+Versions:
+1.0 - Initial release
+2.0 - Addition of OpenGl 3.3 rendering option - PGE 2.11+ required
+    - ImGui related OpenGL functions pulled into extension and no longer need
+	  to be called by the application.
+	    ImGui::CreateContext
+		ImGui::NewFrame
+	    ImGui_ImplOpenGL2_Init
+		ImGui_ImplOpenGL2_NewFrame
+		ImGui_ImplOpenGL2_RenderDrawData
+		ImGui_ImplOpenGL3_Init
+		ImGui_ImplOpenGL3_NewFrame
+		ImGui_ImplOpenGL3_RenderDrawData
+	- Keymap is now matches PGE and includes more symbols like []{}
+	- Add support for Before/After OnUserCreate/OnUserUpdate being run automatically by PGE
+	- Extension automatically registers with PGE using the new 2.10+ system
+*/
+
+
 /*
 
 KNOWN LIMITATIONS
 PGE does not bind every key on the keyboard.
 	- ALT is not bound
-	- No distinction between L-CTRl and R-CTRL
+	- No distinction between L-CTRL and R-CTRL
 	- Maybe no distinction between ENTER and NP_ENTER
 		There is no NP_ENTER, but there is both an ENTER and a RETURN
-	- Many special characters which are not bound to a number or the numpad
-		[]{}\|;:'"/?`~ are all unbound
 	- The Super / Windows key is not bound
 
 There is no IME support for non-English languages.
@@ -74,15 +93,32 @@ in at least one location.  The macro will create the implementation of the
 extension's functions.  It must be defined before the include in the file
 where the implementation is needed.  A separate .cpp file is recommended
 for this purpose.  A PGE version of at least 2.06 is required for some of 
-the functions used.  This can be identified in the PGE header file.
+the functions used.  This can be identified in the PGE header file.  A PGE
+version of at least 2.10 is required to use the OpenGL 3.3 renderer.  The
+OpenGL 3.3 renderer may be specified by defining PGE_GFX_OPENGL33  in the
+same location as OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION.
 
 ```
+//OpenGL 2 renderer
 #define OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
 #include imgui_impl_pge.h
 ```
 
+```
+//OpenGL 3.3 renderer
+#define PGE_GFX_OPENGL33
+#define OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
+#include imgui_impl_pge.h
+```
 
-Dear UmGui Integration Usage
+To use the OpenGL 3.3 renderer, GLEW will also need to be available to
+load the required OpenGL functions.  The static library will be linked
+and needs to appear in the library path, and GL\glew.h will be included
+and must appear on the include path.  GLEW can be found on their ssourceforge
+page here: http://glew.sourceforge.net/
+
+
+Dear ImGui Integration Usage
 
 Unlike many PGE Extensions, this extension requires files from an external
 library.  To integrate the Dear Imgui functionality you will need to pull
@@ -93,7 +129,6 @@ https://github.com/ocornut/imgui
 
 Files Required:
 imgui.h
-imgui_impl_opengl2.h
 imgui_internal.h
 imstb_rectpack.h
 imstb_textedit.h
@@ -102,8 +137,18 @@ imstb_truetype.h
 imgui.cpp
 imgui_demo.cpp
 imgui_draw.cpp
-imgui_impl_opengl2.cpp
 imgui_widgets.cpp
+
+Additionally required are either the opengl2 or opengl3 files, depending
+on the choice of renderer
+
+imgui_impl_opengl2.cpp
+imgui_impl_opengl2.h
+
+imgui_impl_opengl3.cpp
+imgui_impl_opengl3.h
+
+
 
 Once all these files are included in your project you will be able to use
 Dear ImGui.  Documentation on using the Dear ImGui library can be found
@@ -124,10 +169,12 @@ add a basic example below:
 class Example : public olc::PixelGameEngine
 {
 	olc::imgui::PGE_ImGUI pge_imgui;
-	int gameLayer;
+	int m_GameLayer;
 
 public:
-	Example()
+	//PGE_ImGui can automatically call the SetLayerCustomRenderFunction by passing
+	//true into the constructor.  false is the default value.
+	Example() : pge_imgui(false)
 	{
 		sAppName = "Test Application";
 	}
@@ -135,25 +182,14 @@ public:
 public:
 	bool OnUserCreate() override
 	{
-		//One time initialization of the Dear ImGui library
-		ImGui::CreateContext();
-		//Create an instance of the Dear ImGui PGE Integration
-		pge_imgui = olc::imgui::PGE_ImGUI();
-		
-		//The vi2d for pixel size must match the values given in Construct()
-		//Otherwise the mouse will not work correctly
-		pge_imgui.ImGui_ImplPGE_Init(this);
-
-		//Initialize the OpenGL2 rendering system
-		ImGui_ImplOpenGL2_Init();
-
 		//Create a new Layer which will be used for the game
-		gameLayer = CreateLayer();
+		m_GameLayer = CreateLayer();
 		//The layer is not enabled by default,  so we need to enable it
-		EnableLayer(gameLayer, true);
+		EnableLayer(m_GameLayer, true);
 
 		//Set a custom render function on layer 0.  Since DrawUI is a member of
 		//our class, we need to use std::bind
+		//If the pge_imgui was constructed with _register_handler = true, this line is not needed
 		SetLayerCustomRenderFunction(0, std::bind(&Example::DrawUI, this));
 
 		return true;
@@ -162,25 +198,18 @@ public:
 	bool OnUserUpdate(float fElapsedTime) override
 	{
 		//Change the Draw Target to not be Layer 0
-		SetDrawTarget((uint8_t)gameLayer);
+		SetDrawTarget((uint8_t)m_GameLayer);
 		//Game Drawing code here
+
+		//Create and react to your UI here, it will be drawn during the layer draw function
+		ImGui::ShowDemoWindow();
 
 		return true;
 	}
 
 	void DrawUI(void) {
-		//These 3 lines are mandatory per-frame initialization
-		ImGui_ImplOpenGL2_NewFrame();
-		pge_imgui.ImGui_ImplPGE_NewFrame();
-		ImGui::NewFrame();
-
-		//Create and react to your UI here
-		ImGui::ShowDemoWindow();
-		//
-
 		//This finishes the Dear ImGui and renders it to the screen
-		ImGui::Render();
-		ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+		pge_imgui.ImGui_ImplPGE_Render();
 	}
 };
 
@@ -195,8 +224,8 @@ int main() {
 */
 
 #pragma once
-#ifndef _OLC_PGEX_IMGUI_IMPL_PGE_H_
-#define _OLC_PGEX_IMGUI_IMPL_PGE_H_
+#ifndef OLC_PGEX_IMGUI_IMPL_PGE_H
+#define OLC_PGEX_IMGUI_IMPL_PGE_H
 
 #include <vector>
 #include "imgui.h"
@@ -214,17 +243,35 @@ namespace olc
 			char upper;
 		};
 
-		class PGE_ImGUI : PGEX
+		class PGE_ImGUI : public PGEX
 		{
 		public:
+
+			//_register_handler set to true will automatically register this plugin to draw on layer 0
+			PGE_ImGUI(bool _register_handler = false);
+
 			//Initialize the Dear ImGui PGE Platform implementation.
-			olc::rcode ImGui_ImplPGE_Init(olc::PixelGameEngine* pge);
+			olc::rcode ImGui_ImplPGE_Init();
+
 			//Shutdown and perform Dear ImGui Platform cleanup
 			void ImGui_ImplPGE_Shutdown(void);
+
 			//Begin a new frame.  Must be called AFTER the renderer new frame
 			void ImGui_ImplPGE_NewFrame(void);
+
 			//Adjust the sensitivity of the mouse scroll wheel.  Default value is 120.0f
 			void ImGui_ImplPGE_SetScrollSensitivity(float val);
+
+			//Renders the UI to the screen.  Calls ImGui::Render() and ImGui_ImplOpenGL[23]_RenderDrawData() internally
+			//Depending on the configured renderer.
+			void ImGui_ImplPGE_Render(void);
+
+			//A group of PGEX functions which will be automatically run by PGE at specific times
+			void OnBeforeUserCreate() override;
+			void OnAfterUserCreate() override;
+			void OnBeforeUserUpdate(float& fElapsedTime) override;
+			void OnAfterUserUpdate(float fElapsedTime) override;
+
 
 		private:
 			//A list of keyboard buttons which directly input a character
@@ -236,18 +283,13 @@ namespace olc
 			//Larger number = less scrolling.  Negative inverts scroll direction
 			float fScrollSensitivity = 120.0f;
 
-			/*
-			A list of keyboard buttons which directly input a character
-			A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-			K0, K1, K2, K3, K4, K5, K6, K7, K8, K9,
-			SPACE, TAB,
-			NP0, NP1, NP2, NP3, NP4, NP5, NP6, NP7, NP8, NP9,
-			NP_MUL, NP_DIV, NP_ADD, NP_SUB, NP_DECIMAL, PERIOD
-			};*/
-
+			//A flag to determine if the Extensions should automatically create a layer and add the
+			//UI draw handler as the render function for that layer
+			bool register_handler = false;
 
 			//Internal function to update Dear ImGui with the current state of the mouse
 			void ImGui_ImplPGE_UpdateMouse(void);
+
 			//Internal function to update Dear ImGui with the current state of the keyboard
 			void ImGui_ImplPGE_UpdateKeys(void);
 		};
@@ -256,21 +298,35 @@ namespace olc
 }
 
 #ifdef OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
-#undef OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
+//#undef OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
+
+#ifdef OLC_GFX_OPENGL33
+#define GLEW_STATIC
+#include <GL/glew.h>
+#undef GLEW_STATIC 
+#include "imgui_impl_opengl3.h"
+#else
+#include "imgui_impl_opengl2.h"
+#endif
+
 namespace olc
 {
 	namespace imgui
 	{
-		//PGE does not expose the actual window size, so we have to initialize with the pixel size and calulate the actual size on the fly
-		olc::rcode PGE_ImGUI::ImGui_ImplPGE_Init(olc::PixelGameEngine* pge) {
+		PGE_ImGUI::PGE_ImGUI(bool _register_handler) : PGEX(true), register_handler(_register_handler) {
+
+		}
+
+		olc::rcode PGE_ImGUI::ImGui_ImplPGE_Init() {
+			ImGui::CreateContext();
+
+#ifdef OLC_GFX_OPENGL33
+			GLenum err = glewInit();
+			ImGui_ImplOpenGL3_Init();
+#else
+			ImGui_ImplOpenGL2_Init();
+#endif
 			ImGuiIO& io = ImGui::GetIO();
-
-			//Fail if the pge pointer is a nullptr
-			if (!pge) {
-				return olc::FAIL;
-			}
-
-			this->pge = pge;
 
 			io.BackendPlatformName = "imgui_impl_pge";
 
@@ -346,13 +402,34 @@ namespace olc
 				{olc::K7, '7', '&'},
 				{olc::K8, '8', '*'},
 				{olc::K9, '9', '('},
+				{olc::NP0, '0', '0'},
+				{olc::NP1, '1', '1'},
+				{olc::NP2, '2', '2'},
+				{olc::NP3, '3', '3'},
+				{olc::NP4, '4', '4'},
+				{olc::NP5, '5', '5'},
+				{olc::NP6, '6', '6'},
+				{olc::NP7, '7', '7'},
+				{olc::NP8, '8', '8'},
+				{olc::NP9, '9', '9'},
 				{olc::NP_MUL, '*', '*'},
 				{olc::NP_DIV, '/', '/'},
 				{olc::NP_ADD, '+', '+'},
 				{olc::NP_SUB, '-', '-'},
 				{olc::NP_DECIMAL, '.', '.'},
 				{olc::PERIOD, '.', '>'},
-				{olc::SPACE, ' ', ' '}
+				{olc::SPACE, ' ', ' '},
+				{olc::OEM_1, ';', ':'},
+				{olc::OEM_2, '/', '?'},
+				{olc::OEM_3, '`', '~'},
+				{olc::OEM_4, '[', '{'},
+				{olc::OEM_5, '\\', '|'},
+				{olc::OEM_6, ']', '}'},
+				{olc::OEM_7, '\'', '"'},
+				{olc::OEM_8, '-', '-'},
+				{olc::EQUALS, '=', '+'},
+				{olc::COMMA, ',', '<'},
+				{olc::MINUS, '-', '_'}
 			};
 
 			return olc::OK;
@@ -406,6 +483,11 @@ namespace olc
 		}
 
 		void PGE_ImGUI::ImGui_ImplPGE_NewFrame(void) {
+#ifdef OLC_GFX_OPENGL33
+			ImGui_ImplOpenGL3_NewFrame();
+#else
+			ImGui_ImplOpenGL2_NewFrame();
+#endif
 			ImGuiIO& io = ImGui::GetIO();
 			olc::vi2d windowSize = pge->GetWindowSize();
 			IM_ASSERT(io.Fonts->IsBuilt() && "Font atlas not built! It is generally built by the renderer back-end. Missing call to renderer _NewFrame() function? e.g. ImGui_ImplOpenGL2_NewFrame().");
@@ -422,7 +504,41 @@ namespace olc
 		void PGE_ImGUI::ImGui_ImplPGE_SetScrollSensitivity(float val) {
 			this->fScrollSensitivity = val;
 		}
+
+		void PGE_ImGUI::ImGui_ImplPGE_Render(void) {
+			//This finishes the Dear ImGui and renders it to the screen
+			ImGui::Render();
+#ifdef OLC_GFX_OPENGL33
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+#else
+			ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+#endif
+		}
+
+		//Before the OnUserCreate function runs, we will register the UI drawing function
+		//to the layer 0, if we were told to do so during construction
+		//We can't register this during construction because the pge-vLayers is not configured until after construction
+		void PGE_ImGUI::OnBeforeUserCreate() {
+			if (register_handler) {
+				pge->SetLayerCustomRenderFunction(0, std::bind(&PGE_ImGUI::ImGui_ImplPGE_Render, this));
+			}
+		}
+
+		//After the OnUserCreate function runs, we will run all of the Init code to setup
+		//the ImGui.  This will happen automatically in PGE 2.10+
+		void PGE_ImGUI::OnAfterUserCreate() {
+			ImGui_ImplPGE_Init();
+		}
+
+		//Before the OnUserUpdate runs, do the pre-frame ImGui intialization
+		void PGE_ImGUI::OnBeforeUserUpdate(float& fElapsedTime) {
+			ImGui_ImplPGE_NewFrame();
+			ImGui::NewFrame();
+		}
+
+		//There is currently no "after update" logic to run for ImGui
+		void PGE_ImGUI::OnAfterUserUpdate(float fElapsedTime) {}
 	}
 }
 #endif //OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
-#endif //_OLC_PGE_IMGUI_IMPL_PGE_H_
+#endif //OLC_PGE_IMGUI_IMPL_PGE_H
