@@ -2,7 +2,7 @@
 	imgui_impl_pge.h
 	+-------------------------------------------------------------+
 	|         OneLoneCoder Pixel Game Engine Extension            |
-	|               Dear ImGui Integration - v2.0                 |
+	|               Dear ImGui Integration - v3.0                 |
 	+-------------------------------------------------------------+
 	What is this?
 	~~~~~~~~~~~~~
@@ -46,11 +46,11 @@
 Versions:
 1.0 - Initial release
 2.0 - Addition of OpenGl 3.3 rendering option - PGE 2.11+ required
-    - ImGui related OpenGL functions pulled into extension and no longer need
+	- ImGui related OpenGL functions pulled into extension and no longer need
 	  to be called by the application.
-	    ImGui::CreateContext
+		ImGui::CreateContext
 		ImGui::NewFrame
-	    ImGui_ImplOpenGL2_Init
+		ImGui_ImplOpenGL2_Init
 		ImGui_ImplOpenGL2_NewFrame
 		ImGui_ImplOpenGL2_RenderDrawData
 		ImGui_ImplOpenGL3_Init
@@ -59,6 +59,7 @@ Versions:
 	- Keymap is now matches PGE and includes more symbols like []{}
 	- Add support for Before/After OnUserCreate/OnUserUpdate being run automatically by PGE
 	- Extension automatically registers with PGE using the new 2.10+ system
+3.0 - OnBeforeUserUpdate now returns false to work with PGE 2.17
 */
 
 
@@ -92,7 +93,7 @@ Include this file in your application and define the implementation macro
 in at least one location.  The macro will create the implementation of the
 extension's functions.  It must be defined before the include in the file
 where the implementation is needed.  A separate .cpp file is recommended
-for this purpose.  A PGE version of at least 2.06 is required for some of 
+for this purpose.  A PGE version of at least 2.06 is required for some of
 the functions used.  This can be identified in the PGE header file.  A PGE
 version of at least 2.10 is required to use the OpenGL 3.3 renderer.  The
 OpenGL 3.3 renderer may be specified by defining PGE_GFX_OPENGL33  in the
@@ -269,7 +270,7 @@ namespace olc
 			//A group of PGEX functions which will be automatically run by PGE at specific times
 			void OnBeforeUserCreate() override;
 			void OnAfterUserCreate() override;
-			void OnBeforeUserUpdate(float& fElapsedTime) override;
+			bool OnBeforeUserUpdate(float& fElapsedTime) override;
 			void OnAfterUserUpdate(float fElapsedTime) override;
 
 
@@ -531,9 +532,10 @@ namespace olc
 		}
 
 		//Before the OnUserUpdate runs, do the pre-frame ImGui intialization
-		void PGE_ImGUI::OnBeforeUserUpdate(float& fElapsedTime) {
+		bool PGE_ImGUI::OnBeforeUserUpdate(float& fElapsedTime) {
 			ImGui_ImplPGE_NewFrame();
 			ImGui::NewFrame();
+			return false;
 		}
 
 		//There is currently no "after update" logic to run for ImGui
