@@ -427,7 +427,7 @@ namespace olc
 			io.AddMouseSourceEvent(ImGuiMouseSource::ImGuiMouseSource_Mouse);
 
 			//Update Mouse Buttons
-			for (int i = 0; i < 6; i++) {
+			for (int i = 0; i < olc::nMouseButtons; i++) {
 				if (pge->GetMouse(i).bPressed) {
 					io.AddMouseButtonEvent(i, true);
 				}
@@ -532,7 +532,7 @@ namespace olc
 		//As this does not automatically change the mode back to normal, a second call to reset the mode will
 		//generally be required
 		void PGE_ImGUI_BlendModeCallback(const ImDrawList* parent_list, const ImDrawCmd* cmd) {
-			const olc::DecalMode mode = (olc::DecalMode)reinterpret_cast<int>(cmd->UserCallbackData);
+			const olc::DecalMode mode = (olc::DecalMode)reinterpret_cast<std::intptr_t>(cmd->UserCallbackData);
 			switch (mode)
 			{
 			case olc::DecalMode::NORMAL:
