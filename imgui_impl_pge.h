@@ -2,7 +2,7 @@
 	imgui_impl_pge.h
 	+-------------------------------------------------------------+
 	|         OneLoneCoder Pixel Game Engine Extension            |
-	|               Dear ImGui Integration - v3.0                 |
+	|               Dear ImGui Integration - v4.0                 |
 	+-------------------------------------------------------------+
 	What is this?
 	~~~~~~~~~~~~~
@@ -60,6 +60,7 @@ Versions:
 	- Add support for Before/After OnUserCreate/OnUserUpdate being run automatically by PGE
 	- Extension automatically registers with PGE using the new 2.10+ system
 3.0 - OnBeforeUserUpdate now returns false to work with PGE 2.17
+4.0 - Update to support new Dear Imgui input method.  Dear ImGui 1.91.5 now required
 */
 
 
@@ -112,13 +113,6 @@ same location as OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION.
 #include imgui_impl_pge.h
 ```
 
-To use the OpenGL 3.3 renderer, GLEW will also need to be available to
-load the required OpenGL functions.  The static library will be linked
-and needs to appear in the library path, and GL\glew.h will be included
-and must appear on the include path.  GLEW can be found on their ssourceforge
-page here: http://glew.sourceforge.net/
-
-
 Dear ImGui Integration Usage
 
 Unlike many PGE Extensions, this extension requires files from an external
@@ -127,6 +121,9 @@ the Dear ImGui software and include a number of files in your project.
 
 Dear ImGui Github:
 https://github.com/ocornut/imgui
+
+Version Required:
+v1.91.5
 
 Files Required:
 imgui.h
@@ -139,6 +136,7 @@ imgui.cpp
 imgui_demo.cpp
 imgui_draw.cpp
 imgui_widgets.cpp
+Imgui_tables.cpp
 
 Additionally required are either the opengl2 or opengl3 files, depending
 on the choice of renderer
@@ -148,6 +146,7 @@ imgui_impl_opengl2.h
 
 imgui_impl_opengl3.cpp
 imgui_impl_opengl3.h
+imgui_impl_opengl3_loader.h
 
 
 
@@ -233,6 +232,7 @@ int main() {
 #include "olcPixelGameEngine.h"
 
 
+
 namespace olc
 {
 	//Avoid polluting the olc namespace as much as we can
@@ -240,6 +240,7 @@ namespace olc
 	{
 		struct keyCharMap {
 			olc::Key key;
+			ImGuiKey imgui_key;
 			char lower;
 			char upper;
 		};
@@ -273,13 +274,9 @@ namespace olc
 			bool OnBeforeUserUpdate(float& fElapsedTime) override;
 			void OnAfterUserUpdate(float fElapsedTime) override;
 
-
 		private:
-			//A list of keyboard buttons which directly input a character
-			std::vector<keyCharMap> vValueInputKeys;
-
-			//A list of keyboard buttons which have special meaning to Dear Imgui
-			std::vector<olc::Key> vControlInputKeys;
+			//Mapping of olc::Key to ImGuiKey and upper / lowercase inputs
+			std::vector<keyCharMap> vKeys;
 
 			//Larger number = less scrolling.  Negative inverts scroll direction
 			float fScrollSensitivity = 120.0f;
@@ -294,17 +291,15 @@ namespace olc
 			//Internal function to update Dear ImGui with the current state of the keyboard
 			void ImGui_ImplPGE_UpdateKeys(void);
 		};
+
+		// Allow Dear ImGui to change the blend mode
+		void PGE_ImGUI_BlendModeCallback(const ImDrawList* parent_list, const ImDrawCmd* cmd);
 	}
 
 }
 
 #ifdef OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
-//#undef OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
-
 #ifdef OLC_GFX_OPENGL33
-#define GLEW_STATIC
-#include <GL/glew.h>
-#undef GLEW_STATIC 
 #include "imgui_impl_opengl3.h"
 #else
 #include "imgui_impl_opengl2.h"
@@ -322,115 +317,99 @@ namespace olc
 			ImGui::CreateContext();
 
 #ifdef OLC_GFX_OPENGL33
-			GLenum err = glewInit();
 			ImGui_ImplOpenGL3_Init();
 #else
 			ImGui_ImplOpenGL2_Init();
 #endif
 			ImGuiIO& io = ImGui::GetIO();
 
-			io.BackendPlatformName = "imgui_impl_pge";
-
-			io.KeyMap[ImGuiKey_Tab] = olc::TAB;
-			io.KeyMap[ImGuiKey_LeftArrow] = olc::LEFT;
-			io.KeyMap[ImGuiKey_RightArrow] = olc::RIGHT;
-			io.KeyMap[ImGuiKey_UpArrow] = olc::UP;
-			io.KeyMap[ImGuiKey_DownArrow] = olc::DOWN;
-			io.KeyMap[ImGuiKey_PageUp] = olc::PGUP;
-			io.KeyMap[ImGuiKey_PageDown] = olc::PGDN;
-			io.KeyMap[ImGuiKey_Home] = olc::HOME;
-			io.KeyMap[ImGuiKey_End] = olc::END;
-			io.KeyMap[ImGuiKey_Insert] = olc::INS;
-			io.KeyMap[ImGuiKey_Delete] = olc::DEL;
-			io.KeyMap[ImGuiKey_Backspace] = olc::BACK;
-			io.KeyMap[ImGuiKey_Space] = olc::SPACE;
-			io.KeyMap[ImGuiKey_Enter] = olc::ENTER;
-			io.KeyMap[ImGuiKey_Escape] = olc::ESCAPE;
-			io.KeyMap[ImGuiKey_KeypadEnter] = olc::RETURN;
-			io.KeyMap[ImGuiKey_A] = olc::A;
-			io.KeyMap[ImGuiKey_C] = olc::C;
-			io.KeyMap[ImGuiKey_V] = olc::V;
-			io.KeyMap[ImGuiKey_X] = olc::X;
-			io.KeyMap[ImGuiKey_Y] = olc::Y;
-			io.KeyMap[ImGuiKey_Z] = olc::Z;
-
-			//Create a listing of all the control keys so we can iterate them later
-			vControlInputKeys = {
-				olc::TAB, olc::LEFT, olc::RIGHT, olc::UP, olc::DOWN,
-				olc::PGUP, olc::PGDN, olc::HOME, olc::END, olc::INS,
-				olc::DEL, olc::BACK, olc::SPACE, olc::ENTER, olc::ESCAPE,
-				olc::RETURN, olc::A, olc::C, olc::V, olc::X, olc::Y, olc::Z
-			};
+			io.BackendPlatformName = "imgui_impl_pge_4.0";
 
 			//Map keys which input values to input boxes.
 			//This is not the ideal way to do this, but PGE does not expose
 			//much in the way of keyboard or IME input.  Many special characters
 			//are absent as well.
-			vValueInputKeys = {
-				{olc::A, 'a', 'A'},
-				{olc::B, 'b', 'B'},
-				{olc::C, 'c', 'C'},
-				{olc::D, 'd', 'D'},
-				{olc::E, 'e', 'E'},
-				{olc::F, 'f', 'F'},
-				{olc::G, 'g', 'G'},
-				{olc::H, 'h', 'H'},
-				{olc::I, 'i', 'I'},
-				{olc::J, 'j', 'J'},
-				{olc::K, 'k', 'K'},
-				{olc::L, 'l', 'L'},
-				{olc::M, 'm', 'M'},
-				{olc::N, 'n', 'N'},
-				{olc::O, 'o', 'O'},
-				{olc::P, 'p', 'P'},
-				{olc::Q, 'q', 'Q'},
-				{olc::R, 'r', 'R'},
-				{olc::S, 's', 'S'},
-				{olc::T, 't', 'T'},
-				{olc::U, 'u', 'U'},
-				{olc::V, 'v', 'V'},
-				{olc::W, 'w', 'W'},
-				{olc::X, 'x', 'X'},
-				{olc::Y, 'y', 'Y'},
-				{olc::Z, 'z', 'Z'},
-				{olc::K0, '0', ')'},
-				{olc::K1, '1', '!'},
-				{olc::K2, '2', '@'},
-				{olc::K3, '3', '#'},
-				{olc::K4, '4', '$'},
-				{olc::K5, '5', '%'},
-				{olc::K6, '6', '^'},
-				{olc::K7, '7', '&'},
-				{olc::K8, '8', '*'},
-				{olc::K9, '9', '('},
-				{olc::NP0, '0', '0'},
-				{olc::NP1, '1', '1'},
-				{olc::NP2, '2', '2'},
-				{olc::NP3, '3', '3'},
-				{olc::NP4, '4', '4'},
-				{olc::NP5, '5', '5'},
-				{olc::NP6, '6', '6'},
-				{olc::NP7, '7', '7'},
-				{olc::NP8, '8', '8'},
-				{olc::NP9, '9', '9'},
-				{olc::NP_MUL, '*', '*'},
-				{olc::NP_DIV, '/', '/'},
-				{olc::NP_ADD, '+', '+'},
-				{olc::NP_SUB, '-', '-'},
-				{olc::NP_DECIMAL, '.', '.'},
-				{olc::PERIOD, '.', '>'},
-				{olc::SPACE, ' ', ' '},
-				{olc::OEM_1, ';', ':'},
-				{olc::OEM_2, '/', '?'},
-				{olc::OEM_3, '`', '~'},
-				{olc::OEM_4, '[', '{'},
-				{olc::OEM_5, '\\', '|'},
-				{olc::OEM_6, ']', '}'},
-				{olc::OEM_7, '\'', '"'},
-				{olc::OEM_8, '-', '-'},
-				{olc::EQUALS, '=', '+'},
-				{olc::COMMA, ',', '<'},
-				{olc::MINUS, '-', '_'}
+			vKeys = {
+				{olc::A, ImGuiKey_A, 'a', 'A'},
+				{olc::B, ImGuiKey_B, 'b', 'B'},
+				{olc::C, ImGuiKey_C, 'c', 'C'},
+				{olc::D, ImGuiKey_D, 'd', 'D'},
+				{olc::E, ImGuiKey_E, 'e', 'E'},
+				{olc::F, ImGuiKey_F, 'f', 'F'},
+				{olc::G, ImGuiKey_G, 'g', 'G'},
+				{olc::H, ImGuiKey_H, 'h', 'H'},
+				{olc::I, ImGuiKey_I, 'i', 'I'},
+				{olc::J, ImGuiKey_J, 'j', 'J'},
+				{olc::K, ImGuiKey_K, 'k', 'K'},
+				{olc::L, ImGuiKey_L, 'l', 'L'},
+				{olc::M, ImGuiKey_M, 'm', 'M'},
+				{olc::N, ImGuiKey_N, 'n', 'N'},
+				{olc::O, ImGuiKey_O, 'o', 'O'},
+				{olc::P, ImGuiKey_P, 'p', 'P'},
+				{olc::Q, ImGuiKey_Q, 'q', 'Q'},
+				{olc::R, ImGuiKey_R, 'r', 'R'},
+				{olc::S, ImGuiKey_S, 's', 'S'},
+				{olc::T, ImGuiKey_T, 't', 'T'},
+				{olc::U, ImGuiKey_U, 'u', 'U'},
+				{olc::V, ImGuiKey_V, 'v', 'V'},
+				{olc::W, ImGuiKey_W, 'w', 'W'},
+				{olc::X, ImGuiKey_X, 'x', 'X'},
+				{olc::Y, ImGuiKey_Y, 'y', 'Y'},
+				{olc::Z, ImGuiKey_Z, 'z', 'Z'},
+				{olc::K0, ImGuiKey_0, '0', ')'},
+				{olc::K1, ImGuiKey_1, '1', '!'},
+				{olc::K2, ImGuiKey_2, '2', '@'},
+				{olc::K3, ImGuiKey_3, '3', '#'},
+				{olc::K4, ImGuiKey_4, '4', '$'},
+				{olc::K5, ImGuiKey_5, '5', '%'},
+				{olc::K6, ImGuiKey_6, '6', '^'},
+				{olc::K7, ImGuiKey_7, '7', '&'},
+				{olc::K8, ImGuiKey_8, '8', '*'},
+				{olc::K9, ImGuiKey_9, '9', '('},
+				{olc::NP0, ImGuiKey_Keypad0, '0', '0'},
+				{olc::NP1, ImGuiKey_Keypad1, '1', '1'},
+				{olc::NP2, ImGuiKey_Keypad2, '2', '2'},
+				{olc::NP3, ImGuiKey_Keypad3, '3', '3'},
+				{olc::NP4, ImGuiKey_Keypad4, '4', '4'},
+				{olc::NP5, ImGuiKey_Keypad5, '5', '5'},
+				{olc::NP6, ImGuiKey_Keypad6, '6', '6'},
+				{olc::NP7, ImGuiKey_Keypad7, '7', '7'},
+				{olc::NP8, ImGuiKey_Keypad8, '8', '8'},
+				{olc::NP9, ImGuiKey_Keypad9, '9', '9'},
+				{olc::NP_MUL, ImGuiKey_KeypadMultiply, '*', '*'},
+				{olc::NP_DIV, ImGuiKey_KeypadDivide, '/', '/'},
+				{olc::NP_ADD, ImGuiKey_KeypadAdd, '+', '+'},
+				{olc::NP_SUB, ImGuiKey_KeypadSubtract, '-', '-'},
+				{olc::NP_DECIMAL, ImGuiKey_KeypadDecimal, '.', '.'},
+				{olc::PERIOD, ImGuiKey_Period, '.', '>'},
+				{olc::SPACE, ImGuiKey_Space, ' ', ' '},
+				{olc::OEM_1, ImGuiKey_Semicolon, ';', ':'},
+				{olc::OEM_2, ImGuiKey_Slash, '/', '?'},
+				{olc::OEM_3, ImGuiKey_GraveAccent, '`', '~'},
+				{olc::OEM_4, ImGuiKey_LeftBracket, '[', '{'},
+				{olc::OEM_5, ImGuiKey_Backslash, '\\', '|'},
+				{olc::OEM_6, ImGuiKey_RightBracket, ']', '}'},
+				{olc::OEM_7, ImGuiKey_Apostrophe, '\'', '"'},
+				{olc::OEM_8, ImGuiKey_Minus, '-', '-'},
+				{olc::EQUALS, ImGuiKey_Equal, '=', '+'},
+				{olc::COMMA, ImGuiKey_Comma, ',', '<'},
+				{olc::MINUS, ImGuiKey_Minus, '-', '_'},
+				{olc::TAB, ImGuiKey_Tab, '\t', '\t'},
+
+				// These keys do not trigger any character input
+				{olc::LEFT, ImGuiKey_LeftArrow, '\0', '\0'},
+				{olc::RIGHT, ImGuiKey_RightArrow, '\0', '\0'},
+				{olc::UP, ImGuiKey_UpArrow, '\0', '\0'},
+				{olc::DOWN, ImGuiKey_DownArrow, '\0', '\0'},
+				{olc::PGUP, ImGuiKey_PageUp, '\0', '\0'},
+				{olc::PGDN, ImGuiKey_PageDown, '\0', '\0'},
+				{olc::HOME, ImGuiKey_Home, '\0', '\0'},
+				{olc::END, ImGuiKey_End, '\0', '\0'},
+				{olc::INS, ImGuiKey_Insert, '\0', '\0'},
+				{olc::DEL, ImGuiKey_Delete, '\0', '\0'},
+				{olc::BACK, ImGuiKey_Backspace, '\0', '\0'},
+				{olc::ENTER, ImGuiKey_Enter, '\0', '\0'},
+				{olc::ESCAPE, ImGuiKey_Escape, '\0', '\0'},
 			};
 
 			return olc::OK;
@@ -445,40 +424,48 @@ namespace olc
 			ImGuiIO& io = ImGui::GetIO();
 			olc::vi2d windowMouse = pge->GetWindowMouse();
 
-			//Update Mouse Buttons
-			io.MouseDown[0] = pge->GetMouse(0).bHeld;
-			io.MouseDown[1] = pge->GetMouse(1).bHeld;
-			io.MouseDown[2] = pge->GetMouse(2).bHeld;
-			io.MouseDown[3] = pge->GetMouse(3).bHeld;
-			io.MouseDown[4] = pge->GetMouse(4).bHeld;
+			io.AddMouseSourceEvent(ImGuiMouseSource::ImGuiMouseSource_Mouse);
 
+			//Update Mouse Buttons
+			for (int i = 0; i < 6; i++) {
+				if (pge->GetMouse(i).bPressed) {
+					io.AddMouseButtonEvent(i, true);
+				}
+				else if (pge->GetMouse(i).bReleased) {
+					io.AddMouseButtonEvent(i, false);
+				}
+			}
+			
 			//Update the Mouse Position
-			io.MousePos = ImVec2((float)windowMouse.x, (float)windowMouse.y);
+			io.AddMousePosEvent((float)windowMouse.x, (float)windowMouse.y);
 
 			//Update Mouse Wheel
-			io.MouseWheel = static_cast<float>(pge->GetMouseWheel()) / fScrollSensitivity;
+			io.AddMouseWheelEvent(0.0f, static_cast<float>(pge->GetMouseWheel()) / fScrollSensitivity);
 		}
 
 		void PGE_ImGUI::ImGui_ImplPGE_UpdateKeys(void) {
 			ImGuiIO& io = ImGui::GetIO();
 
-			io.KeyCtrl = pge->GetKey(olc::CTRL).bHeld;
-			io.KeyAlt = false; // pge->GetKey(olc::ALT).bHeld;
-			io.KeyShift = pge->GetKey(olc::SHIFT).bHeld;
-			io.KeySuper = false;
-
-			//Update the status of the control keys.
-			for (auto const& x : vControlInputKeys) {
-				io.KeysDown[x] = pge->GetKey(x).bHeld;
-			}
+			io.AddKeyEvent(ImGuiMod_Ctrl, pge->GetKey(olc::CTRL).bHeld);
+			io.AddKeyEvent(ImGuiMod_Shift, pge->GetKey(olc::SHIFT).bHeld);
+			io.AddKeyEvent(ImGuiMod_Alt, false);
+			io.AddKeyEvent(ImGuiMod_Super, false);
 
 			//Get the status of the SHIFT key to so we can change the inserted character
 			bool isShift = pge->GetKey(SHIFT).bHeld;
 
-			//Get characters that can be entered into inputs
-			for (auto& m : vValueInputKeys) {
+			//Iterate the key list an send the appropriate press / release events to Dear ImGui
+			for (auto& m : vKeys) {
 				if (pge->GetKey(m.key).bPressed) {
-					io.AddInputCharacter(isShift ? m.upper : m.lower);
+					io.AddKeyEvent(m.imgui_key, true);
+
+					//If the key has an associated character then send that too
+					if (m.lower != '\0') {
+						io.AddInputCharacter(isShift ? m.upper : m.lower);
+					}
+				}
+				else if (pge->GetKey(m.key).bReleased) {
+					io.AddKeyEvent(m.imgui_key, false);
 				}
 			}
 		}
@@ -540,6 +527,34 @@ namespace olc
 
 		//There is currently no "after update" logic to run for ImGui
 		void PGE_ImGUI::OnAfterUserUpdate(float fElapsedTime) {}
+
+		//Change the GL blending function.  Useful when overlaying images with the Dear ImGui Image function
+		//As this does not automatically change the mode back to normal, a second call to reset the mode will
+		//generally be required
+		void PGE_ImGUI_BlendModeCallback(const ImDrawList* parent_list, const ImDrawCmd* cmd) {
+			const olc::DecalMode mode = (olc::DecalMode)reinterpret_cast<int>(cmd->UserCallbackData);
+			switch (mode)
+			{
+			case olc::DecalMode::NORMAL:
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				break;
+			case olc::DecalMode::ADDITIVE:
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+				break;
+			case olc::DecalMode::MULTIPLICATIVE:
+				glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+				break;
+			case olc::DecalMode::STENCIL:
+				glBlendFunc(GL_ZERO, GL_SRC_ALPHA);
+				break;
+			case olc::DecalMode::ILLUMINATE:
+				glBlendFunc(GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA);
+				break;
+			case olc::DecalMode::WIREFRAME:
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				break;
+			}
+		}
 	}
 }
 #endif //OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
