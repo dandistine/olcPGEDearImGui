@@ -108,7 +108,7 @@ same location as OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION.
 
 ```
 //OpenGL 3.3 renderer
-#define PGE_GFX_OPENGL33
+#define OLC_GFX_OPENGL33
 #define OLC_PGEX_DEAR_IMGUI_IMPLEMENTATION
 #include imgui_impl_pge.h
 ```
